@@ -1,0 +1,6 @@
+.env
+logs/
+__pycache__/
+*.pyc
+postgres_data/
+clickhouse_data/
