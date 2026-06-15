@@ -17,10 +17,14 @@ services:
       test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER}"]
       interval: 5s
       retries: 5
+    networks:
+      - airflow_network
+    ports:
+      - "5432:5432"
 
   redis:
     image: redis:7
-    command: redis-server --requirepass ${REDIS_PASSWORD}
+    command: redis-server --requirepass ${REDIS_PASSWORD} --bind 0.0.0.0
     restart: unless-stopped
     deploy:
       resources:
@@ -31,6 +35,10 @@ services:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       retries: 5
+    networks:
+      - airflow_network
+    ports:
+      - "6379:6379"
 
   clickhouse:
     image: clickhouse/clickhouse-server:23.8
@@ -49,6 +57,8 @@ services:
         limits:
           memory: 1G
           cpus: '0.7'
+    networks:
+      - airflow_network
 
   airflow-init:
     build: .
@@ -58,9 +68,9 @@ services:
       redis:
         condition: service_healthy
     environment:
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB}
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       AIRFLOW__CELERY__BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
-      AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB}
+      AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
     volumes:
       - ./dags:/opt/airflow/dags
     entrypoint: /bin/bash
@@ -70,9 +80,12 @@ services:
       airflow users create -u ${AIRFLOW_ADMIN_USER} -p ${AIRFLOW_ADMIN_PASSWORD} -f Admin -l User -r Admin -e admin@example.com || true
       "
     restart: "no"
+    networks:
+      - airflow_network
 
   airflow:
     build: .
+    network_mode: host
     depends_on:
       postgres:
         condition: service_healthy
@@ -81,24 +94,26 @@ services:
       airflow-init:
         condition: service_completed_successfully
     environment:
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB}
-      AIRFLOW__CELERY__BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
-      AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB}
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/${POSTGRES_DB}
+      AIRFLOW__CELERY__BROKER_URL: redis://:${REDIS_PASSWORD}@localhost:6379/0
+      AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/${POSTGRES_DB}
       AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
       AIRFLOW__WEBSERVER__WORKERS: '1'
       AIRFLOW__SCHEDULER__SCHEDULER_HEARTBEAT_SEC: '10'
       AIRFLOW__SCHEDULER__MIN_FILE_PROCESS_INTERVAL: '60'
-      AIRFLOW__CORE__DAGBAG_IMPORT_TIMEOUT: '30'
+      AIRFLOW__CORE__DAGBAG_IMPORT_TIMEOUT: '60'
       AIRFLOW__CORE__MAX_ACTIVE_RUNS_PER_DAG: '1'
+      AIRFLOW__CORE__DEFAULT_TIMEZONE: 'Europe/Moscow'
       _AIRFLOW_WWW_USER_USERNAME: ${AIRFLOW_ADMIN_USER}
       _AIRFLOW_WWW_USER_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD}
-      CLICKHOUSE_HOST: clickhouse
+      CLICKHOUSE_HOST: localhost
       CLICKHOUSE_PORT: 9000
       CLICKHOUSE_USER: ${CLICKHOUSE_USER}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
       CLICKHOUSE_DB: ${CLICKHOUSE_DB}
     volumes:
       - ./dags:/opt/airflow/dags
+      - /etc/localtime:/etc/localtime:ro
     ports:
       - "8080:8080"
     command: standalone
@@ -108,6 +123,10 @@ services:
         limits:
           memory: 1.5G
           cpus: '1.0'
+
+networks:
+  airflow_network:
+    driver: bridge
 
 volumes:
   postgres_data:

@@ -15,17 +15,25 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-DELAYS = {'category': (0.3, 0.7), 'page': (0.3, 0.7), 'product': (0.1, 0.3)}
-MAX_WORKERS = 10
+
+DELAYS = {'category': (1.5, 2.5), 'page': (1.0, 1.5), 'product': (0.5, 1.0)}
+MAX_WORKERS = 3
 
 
 def create_session():
     session = requests.Session()
     session.headers.update({
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'ru-RU,ru;q=0.9,en;q=0.8',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Accept-Encoding': 'gzip, deflate, br',
         'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Cache-Control': 'max-age=0',
     })
     session.timeout = 30
     return session
@@ -46,22 +54,33 @@ def filter_categories(categories):
 def extract_categories(base_url, session):
     logger.info("Extracting categories...")
     time.sleep(random.uniform(*DELAYS['category']))
-    response = session.get(base_url + '/goods/')
-    response.raise_for_status()
-    soup = BeautifulSoup(response.content, 'html.parser')
-    categories = []
-    menu = soup.find('div', class_='VVCatalog2020Menu')
-    if menu:
-        for item in menu.find_all('li', class_='VVCatalog2020Menu__Item'):
-            link = item.find('a', class_='VVCatalog2020Menu__Link')
-            if link and link.get('href'):
-                name = link.find('span', class_='_text')
-                categories.append({
-                    'name': name.get_text(strip=True) if name else None,
-                    'url': base_url + link['href']
-                })
-    logger.info(f"Found {len(categories)} categories")
-    return categories
+    
+    for attempt in range(3):
+        try:
+            response = session.get(base_url + '/goods/', timeout=30)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.content, 'html.parser')
+            categories = []
+            menu = soup.find('div', class_='VVCatalog2020Menu')
+            if menu:
+                for item in menu.find_all('li', class_='VVCatalog2020Menu__Item'):
+                    link = item.find('a', class_='VVCatalog2020Menu__Link')
+                    if link and link.get('href'):
+                        name = link.find('span', class_='_text')
+                        categories.append({
+                            'name': name.get_text(strip=True) if name else None,
+                            'url': base_url + link['href']
+                        })
+            logger.info(f"Found {len(categories)} categories")
+            return categories
+        except Exception as e:
+            logger.warning(f"Attempt {attempt + 1} failed: {e}")
+            if attempt < 2:
+                time.sleep(5)
+            else:
+                raise
+    
+    return []
 
 
 def get_total_products_count(soup):
@@ -77,30 +96,14 @@ def get_total_products_count(soup):
 def extract_product_links(category_url, session):
     logger.debug(f"Extracting product links from {category_url}")
     all_product_links = []
-    time.sleep(random.uniform(*DELAYS['page']))
-    response = session.get(category_url)
-    response.raise_for_status()
-    soup = BeautifulSoup(response.content, 'html.parser')
     
-    for card in soup.find_all('div', class_='ProductCard__content'):
-        link = card.find('a', class_='ProductCard__link')
-        if link and link.get('href'):
-            href = link['href']
-            if not href.startswith('http'):
-                href = 'https://vkusvill.ru' + href
-            all_product_links.append(href)
-    
-    total_products = get_total_products_count(soup)
-    max_pages = math.ceil(total_products / 24) if total_products else 1
-    logger.debug(f"Total products: {total_products}, pages: {max_pages}")
-    
-    for page_num in range(2, max_pages + 1):
-        time.sleep(random.uniform(*DELAYS['page']))
-        page_url = f"{category_url}?PAGEN_1={page_num}" if '?' not in category_url else f"{category_url}&PAGEN_1={page_num}"
+    for attempt in range(3):
         try:
-            response = session.get(page_url)
+            time.sleep(random.uniform(*DELAYS['page']))
+            response = session.get(category_url, timeout=30)
             response.raise_for_status()
             soup = BeautifulSoup(response.content, 'html.parser')
+            
             for card in soup.find_all('div', class_='ProductCard__content'):
                 link = card.find('a', class_='ProductCard__link')
                 if link and link.get('href'):
@@ -108,16 +111,42 @@ def extract_product_links(category_url, session):
                     if not href.startswith('http'):
                         href = 'https://vkusvill.ru' + href
                     all_product_links.append(href)
-            if not soup.find_all('div', class_='ProductCard__content'):
-                logger.debug(f"No products on page {page_num}, stopping")
-                break
+            
+            total_products = get_total_products_count(soup)
+            max_pages = math.ceil(total_products / 24) if total_products else 1
+            logger.debug(f"Total products: {total_products}, pages: {max_pages}")
+            
+            for page_num in range(2, max_pages + 1):
+                time.sleep(random.uniform(*DELAYS['page']))
+                page_url = f"{category_url}?PAGEN_1={page_num}" if '?' not in category_url else f"{category_url}&PAGEN_1={page_num}"
+                try:
+                    response = session.get(page_url, timeout=30)
+                    response.raise_for_status()
+                    soup = BeautifulSoup(response.content, 'html.parser')
+                    for card in soup.find_all('div', class_='ProductCard__content'):
+                        link = card.find('a', class_='ProductCard__link')
+                        if link and link.get('href'):
+                            href = link['href']
+                            if not href.startswith('http'):
+                                href = 'https://vkusvill.ru' + href
+                            all_product_links.append(href)
+                    if not soup.find_all('div', class_='ProductCard__content'):
+                        break
+                except Exception as e:
+                    logger.warning(f"Error on page {page_num}: {e}")
+                    continue
+            
+            unique_links = list(set(all_product_links))
+            logger.info(f"Found {len(unique_links)} unique product links")
+            return unique_links
         except Exception as e:
-            logger.warning(f"Error on page {page_num}: {e}")
-            continue
+            logger.warning(f"Attempt {attempt + 1} failed for {category_url}: {e}")
+            if attempt < 2:
+                time.sleep(5)
+            else:
+                return []
     
-    unique_links = list(set(all_product_links))
-    logger.info(f"Found {len(unique_links)} unique product links")
-    return unique_links
+    return []
 
 
 def extract_price_info(soup):
@@ -136,119 +165,125 @@ def extract_price_info(soup):
 
 
 def extract_product_info(url, session):
-    time.sleep(random.uniform(*DELAYS['product']))
-    response = session.get(url)
-    response.raise_for_status()
-    soup = BeautifulSoup(response.content, 'html.parser')
-    
-    title = None
-    title_meta = soup.find('div', class_='hidden', itemprop='name')
-    if title_meta:
-        title = title_meta.get_text(strip=True)
-    else:
-        title_tag = soup.find('h1')
-        title = title_tag.get_text(strip=True) if title_tag else None
-    
-    description = None
-    desc_meta = soup.find('div', class_='hidden', itemprop='description')
-    if desc_meta:
-        description = desc_meta.get_text(strip=True)
-    
-    category = None
-    subcategory = None
-    breadcrumbs = soup.find_all('span', class_='Breadcrumbs__link', itemprop='itemListElement')
-    if len(breadcrumbs) >= 2:
-        categories_list = []
-        for crumb in breadcrumbs:
-            name_tag = crumb.find('span', itemprop='name')
-            if name_tag:
-                categories_list.append(name_tag.get_text(strip=True))
-        if len(categories_list) >= 2:
-            category = categories_list[-2]
-            subcategory = categories_list[-1]
-            if subcategory == title and len(categories_list) >= 3:
-                category = categories_list[-3]
-                subcategory = categories_list[-2]
-    
-    price, price_unit = extract_price_info(soup)
-    
-    rating = None
-    rating_tag = soup.find('div', class_='Rating__text', id='js-product-api-reviews-rate-value')
-    if rating_tag:
-        rating = rating_tag.get_text(strip=True)
-    
-    nutrition = {}
-    energy_items = soup.find_all('div', class_='VV23_DetailProdPageAccordion__EnergyItem')
-    for item in energy_items:
-        value_tag = item.find('div', class_='VV23_DetailProdPageAccordion__EnergyValue')
-        desc_tag = item.find('div', class_='VV23_DetailProdPageAccordion__EnergyDesc')
-        if value_tag and desc_tag:
-            nutrition[desc_tag.get_text(strip=True)] = value_tag.get_text(strip=True)
-    
-    shelf_life = brand = storage_conditions = manufacturer = country = composition = weight = None
-    info_items = soup.find_all('div', class_='VV23_DetailProdPageInfoDescItem')
-    for item in info_items:
-        title_tag = item.find('h4', class_='VV23_DetailProdPageInfoDescItem__Title')
-        if not title_tag:
-            continue
-        title_text = title_tag.get_text(strip=True)
-        desc_tag = item.find('div', class_='VV23_DetailProdPageInfoDescItem__Desc')
-        if desc_tag:
-            desc_text = desc_tag.get_text(strip=True)
-            if 'Годен' in title_text:
-                shelf_life = desc_text
-            elif 'Бренд' in title_text:
-                brand = desc_text
-            elif 'Условия хранения' in title_text:
-                storage_conditions = desc_text
-            elif 'Изготовитель' in title_text:
-                manufacturer = desc_text
-            elif 'Страна производства' in title_text:
-                country = desc_text
-            elif 'Состав' in title_text:
-                composition = desc_text
-            elif 'Вес' in title_text or 'Объем' in title_text:
-                weight = desc_text
-    
-    labels = []
-    label_tags = soup.find_all('div', class_='ProductCardLabel')
-    for label in label_tags:
-        label_text = label.get('title')
-        if label_text:
-            labels.append(label_text)
-    
-    return {
-        'date': datetime.now().date(),
-        'title': title,
-        'category': category,
-        'subcategory': subcategory,
-        'price': float(price) if price else None,
-        'price_unit': price_unit,
-        'weight': weight,
-        'rating': rating,
-        'description': description,
-        'calories': nutrition.get('Ккал'),
-        'proteins': nutrition.get('Белки, г'),
-        'fats': nutrition.get('Жиры, г'),
-        'carbs': nutrition.get('Углеводы, г'),
-        'shelf_life': shelf_life,
-        'brand': brand,
-        'storage_conditions': storage_conditions,
-        'manufacturer': manufacturer,
-        'country': country,
-        'composition': composition,
-        'labels': ', '.join(labels) if labels else None,
-        'url': url,
-        'parsed_at': datetime.now()
-    }
+    for attempt in range(3):
+        try:
+            time.sleep(random.uniform(*DELAYS['product']))
+            response = session.get(url, timeout=30)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.content, 'html.parser')
+            
+            title = None
+            title_meta = soup.find('div', class_='hidden', itemprop='name')
+            if title_meta:
+                title = title_meta.get_text(strip=True)
+            else:
+                title_tag = soup.find('h1')
+                title = title_tag.get_text(strip=True) if title_tag else None
+            
+            description = None
+            desc_meta = soup.find('div', class_='hidden', itemprop='description')
+            if desc_meta:
+                description = desc_meta.get_text(strip=True)
+            
+            category = None
+            subcategory = None
+            breadcrumbs = soup.find_all('span', class_='Breadcrumbs__link', itemprop='itemListElement')
+            if len(breadcrumbs) >= 2:
+                categories_list = []
+                for crumb in breadcrumbs:
+                    name_tag = crumb.find('span', itemprop='name')
+                    if name_tag:
+                        categories_list.append(name_tag.get_text(strip=True))
+                if len(categories_list) >= 2:
+                    category = categories_list[-2]
+                    subcategory = categories_list[-1]
+                    if subcategory == title and len(categories_list) >= 3:
+                        category = categories_list[-3]
+                        subcategory = categories_list[-2]
+            
+            price, price_unit = extract_price_info(soup)
+            
+            rating = None
+            rating_tag = soup.find('div', class_='Rating__text', id='js-product-api-reviews-rate-value')
+            if rating_tag:
+                rating = rating_tag.get_text(strip=True)
+            
+            nutrition = {}
+            energy_items = soup.find_all('div', class_='VV23_DetailProdPageAccordion__EnergyItem')
+            for item in energy_items:
+                value_tag = item.find('div', class_='VV23_DetailProdPageAccordion__EnergyValue')
+                desc_tag = item.find('div', class_='VV23_DetailProdPageAccordion__EnergyDesc')
+                if value_tag and desc_tag:
+                    nutrition[desc_tag.get_text(strip=True)] = value_tag.get_text(strip=True)
+            
+            shelf_life = brand = storage_conditions = manufacturer = country = composition = weight = None
+            info_items = soup.find_all('div', class_='VV23_DetailProdPageInfoDescItem')
+            for item in info_items:
+                title_tag = item.find('h4', class_='VV23_DetailProdPageInfoDescItem__Title')
+                if not title_tag:
+                    continue
+                title_text = title_tag.get_text(strip=True)
+                desc_tag = item.find('div', class_='VV23_DetailProdPageInfoDescItem__Desc')
+                if desc_tag:
+                    desc_text = desc_tag.get_text(strip=True)
+                    if 'Годен' in title_text:
+                        shelf_life = desc_text
+                    elif 'Бренд' in title_text:
+                        brand = desc_text
+                    elif 'Условия хранения' in title_text:
+                        storage_conditions = desc_text
+                    elif 'Изготовитель' in title_text:
+                        manufacturer = desc_text
+                    elif 'Страна производства' in title_text:
+                        country = desc_text
+                    elif 'Состав' in title_text:
+                        composition = desc_text
+                    elif 'Вес' in title_text or 'Объем' in title_text:
+                        weight = desc_text
+            
+            labels = []
+            label_tags = soup.find_all('div', class_='ProductCardLabel')
+            for label in label_tags:
+                label_text = label.get('title')
+                if label_text:
+                    labels.append(label_text)
+            
+            return {
+                'date': datetime.now().date(),
+                'title': title,
+                'category': category,
+                'subcategory': subcategory,
+                'price': float(price) if price else None,
+                'price_unit': price_unit,
+                'weight': weight,
+                'rating': rating,
+                'description': description,
+                'calories': nutrition.get('Ккал'),
+                'proteins': nutrition.get('Белки, г'),
+                'fats': nutrition.get('Жиры, г'),
+                'carbs': nutrition.get('Углеводы, г'),
+                'shelf_life': shelf_life,
+                'brand': brand,
+                'storage_conditions': storage_conditions,
+                'manufacturer': manufacturer,
+                'country': country,
+                'composition': composition,
+                'labels': ', '.join(labels) if labels else None,
+                'url': url,
+                'parsed_at': datetime.now()
+            }
+        except Exception as e:
+            logger.warning(f"Attempt {attempt + 1} failed for {url}: {e}")
+            if attempt < 2:
+                time.sleep(5)
+            else:
+                return None
+    return None
 
 
-def extract_product_info_safe(url, session):
-    try:
-        return extract_product_info(url, session)
-    except Exception as e:
-        logger.error(f"Failed to extract product {url}: {e}")
-        return None
+def process_product(url):
+    session = create_session()
+    return extract_product_info(url, session)
 
 
 def create_table():
@@ -289,7 +324,20 @@ def create_table():
     logger.info("Table ready")
 
 
+def is_site_available():
+    try:
+        response = requests.get('https://vkusvill.ru', timeout=10)
+        return response.status_code == 200
+    except:
+        return False
+
+
 def scrape(**context):
+    if not is_site_available():
+        logger.error("Site is not available, skipping scrape")
+        context['ti'].xcom_push(key='data', value=[])
+        return
+
     logger.info("=" * 60)
     logger.info("Starting scrape process")
     logger.info("=" * 60)
@@ -315,7 +363,7 @@ def scrape(**context):
         successful = 0
         
         with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-            futures = {executor.submit(extract_product_info_safe, url, create_session()): url for url in product_links}
+            futures = {executor.submit(process_product, url): url for url in product_links}
             for future in concurrent.futures.as_completed(futures):
                 result = future.result()
                 if result:
@@ -367,10 +415,11 @@ default_args = {
     'retry_delay': timedelta(minutes=1)
 }
 
+
 with DAG(
     'etl',
     default_args=default_args,
-    schedule_interval='0 0 * * *',
+    schedule_interval='0 8 * * *',
     catchup=False,
     max_active_runs=1
 ) as dag:
