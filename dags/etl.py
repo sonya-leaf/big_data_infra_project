@@ -452,7 +452,6 @@ def create_table():
     db = os.environ['CLICKHOUSE_DB']
     client.execute(f"""
         CREATE TABLE IF NOT EXISTS {db}.products (
-            date Date,
             title String,
             category String,
             subcategory String,
