@@ -242,6 +242,8 @@ def parse_price(price_str):
         return float(str(price_str).replace(' ', '').replace(',', '.'))
     except:
         return None
+
+
 def safe_float(value):
     if value is None:
         return None
@@ -258,6 +260,7 @@ def safe_float(value):
         return float(value.replace(",", "."))
     except:
         return None
+
 
 def extract_product_info(url, session):
     for attempt in range(3):
@@ -354,7 +357,6 @@ def extract_product_info(url, session):
                     labels.append(label_text)
 
             result = {
-                'date': datetime.now().date(),
                 'title': title,
                 'category': category,
                 'subcategory': subcategory,
@@ -401,7 +403,6 @@ def save_batch_to_clickhouse(batch, client, db):
         values = []
         for record in batch:
             row = (
-                record['date'],
                 record['title'],
                 record['category'],
                 record['subcategory'],
@@ -474,7 +475,7 @@ def create_table():
             url String,
             parsed_at DateTime
         ) ENGINE = MergeTree()
-        ORDER BY (date, category, subcategory, title)
+        ORDER BY (parsed_at, category, subcategory, title)
     """)
     logger.info("Table ready")
 
@@ -576,12 +577,11 @@ def show_stats(**context):
         
         date_range = client.execute(f"""
             SELECT 
-                min(date) as min_date,
-                max(date) as max_date,
-                count(DISTINCT date) as days
-            FROM {db}.vkusvill_products
+                min(parsed_at) as min_parsed_at,
+                max(parsed_at) as max_parsed_at,
+            FROM {db}.products
         """)[0]
-        logger.info(f"Date range: {date_range[0]} to {date_range[1]} ({date_range[2]} days)")
+        logger.info(f"Date range: {date_range[0]} to {date_range[1]}")
         
         logger.info("-" * 60)
         
@@ -589,7 +589,7 @@ def show_stats(**context):
             SELECT 
                 category,
                 count(*) as count
-            FROM {db}.vkusvill_products
+            FROM {db}.products
             WHERE category IS NOT NULL
             GROUP BY category
             ORDER BY count DESC
@@ -609,7 +609,7 @@ def show_stats(**context):
                 price,
                 rating,
                 url
-            FROM {db}.vkusvill_products
+            FROM {db}.products
             ORDER BY parsed_at DESC
             LIMIT 5
         """)
@@ -626,7 +626,7 @@ def show_stats(**context):
                 avg(price) as avg_price,
                 min(price) as min_price,
                 max(price) as max_price
-            FROM {db}.vkusvill_products
+            FROM {db}.products
             WHERE price IS NOT NULL
         """)[0]
         logger.info(f"Price stats: avg={price_stats[0]:.2f}₽, min={price_stats[1]:.2f}₽, max={price_stats[2]:.2f}₽")
