@@ -4,8 +4,8 @@
 
 1. Copy .env.example to .env and edit passwords
 2. Run: docker compose up -d
-3. Wait 60 seconds
-4. Trigger: docker compose exec airflow airflow dags trigger etl
+3. Wait several minutes seconds for the services to start
+4. Trigger: docker compose exec airflow airflow dags trigger etl (or from web-interface)
 
 ## Access
 
