@@ -242,7 +242,22 @@ def parse_price(price_str):
         return float(str(price_str).replace(' ', '').replace(',', '.'))
     except:
         return None
+def safe_float(value):
+    if value is None:
+        return None
 
+    value = str(value).strip()
+
+    if value == "":
+        return None
+
+    if value == "Ждёт оценку":
+        return None
+
+    try:
+        return float(value.replace(",", "."))
+    except:
+        return None
 
 def extract_product_info(url, session):
     for attempt in range(3):
@@ -393,12 +408,12 @@ def save_batch_to_clickhouse(batch, client, db):
                 int(record['price']) if record['price'] is not None else 0,
                 record['price_unit'],
                 record['weight'],
-                float(record['rating']) if record['rating'] is not None else None,
+                safe_float(record['rating']),
                 record['description'],
-                float(record['calories']) if record['calories'] is not None else None,
-                float(record['proteins']) if record['proteins'] is not None else None,
-                float(record['fats']) if record['fats'] is not None else None,
-                float(record['carbs']) if record['carbs'] is not None else None,
+                safe_float(record['calories']),
+                safe_float(record['proteins']),
+                safe_float(record['fats']),
+                safe_float(record['carbs']),
                 record['shelf_life'],
                 record['brand'],
                 record['storage_conditions'],
