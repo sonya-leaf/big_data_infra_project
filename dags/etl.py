@@ -24,7 +24,7 @@ DELAYS = {
     'product': (0.5, 1.0),
 }
 
-MAX_WORKERS = 3
+MAX_WORKERS = 5
 BATCH_SIZE = 100
 
 logging.basicConfig(level=logging.INFO)
@@ -247,15 +247,9 @@ def parse_price(price_str):
 def safe_float(value):
     if value is None:
         return None
-
     value = str(value).strip()
-
-    if value == "":
+    if value == "" or value == "Ждёт оценку" or value == "None":
         return None
-
-    if value == "Ждёт оценку":
-        return None
-
     try:
         return float(value.replace(",", "."))
     except:
@@ -403,11 +397,11 @@ def save_batch_to_clickhouse(batch, client, db):
         values = []
         for record in batch:
             row = (
-                record['title'],
-                record['category'],
-                record['subcategory'],
+                record['title'] if record['title'] is not None else '',
+                record['category'] if record['category'] is not None else '',
+                record['subcategory'] if record['subcategory'] is not None else '',
                 int(record['price']) if record['price'] is not None else 0,
-                record['price_unit'],
+                record['price_unit'] if record['price_unit'] is not None else 'шт',
                 record['weight'],
                 safe_float(record['rating']),
                 record['description'],
@@ -422,7 +416,7 @@ def save_batch_to_clickhouse(batch, client, db):
                 record['country'],
                 record['composition'],
                 record['labels'],
-                record['url'],
+                record['url'] if record['url'] is not None else '',  # <--- вот тут!
                 record['parsed_at']
             )
             values.append(row)
@@ -567,7 +561,7 @@ def show_stats(**context):
     total_saved = context['ti'].xcom_pull(key='total_saved', task_ids='scrape')
     
     try:
-        total_count = client.execute(f"SELECT count(*) FROM {db}.vkusvill_products")[0][0]
+        total_count = client.execute(f"SELECT count(*) FROM {db}.products")[0][0]
         logger.info(f"Total records in table: {total_count}")
         
         if total_saved:
@@ -578,7 +572,7 @@ def show_stats(**context):
         date_range = client.execute(f"""
             SELECT 
                 min(parsed_at) as min_parsed_at,
-                max(parsed_at) as max_parsed_at,
+                max(parsed_at) as max_parsed_at
             FROM {db}.products
         """)[0]
         logger.info(f"Date range: {date_range[0]} to {date_range[1]}")
