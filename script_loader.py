@@ -33,10 +33,7 @@ def safe_float(value):
         return None
 
 client = get_clickhouse_client()
-if platform.system() == "Windows":
-    DATA_DIR = Path(r"D:\big_data_infra_project\parse_items")
-else:
-    DATA_DIR = Path("/opt/airflow/parse_items")
+DATA_DIR = Path("parsed_items")
 
 files = list(DATA_DIR.glob("*.csv"))
 

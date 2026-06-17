@@ -4,3 +4,5 @@ __pycache__/
 *.pyc
 postgres_data/
 clickhouse_data/
+venv/
+parsed_items/
