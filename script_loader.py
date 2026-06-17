@@ -7,6 +7,7 @@ import os
 from dotenv import load_dotenv
 
 load_dotenv()
+
 def get_clickhouse_client():
     return Client(
         host=os.environ['CLICKHOUSE_HOST'],
@@ -16,7 +17,7 @@ def get_clickhouse_client():
     )
 
 DB = "vkusvill_db"
-
+BATCH_SIZE = 300
 
 def safe_float(value):
     if pd.isna(value):
@@ -38,16 +39,15 @@ DATA_DIR = Path("parsed_items")
 files = list(DATA_DIR.glob("*.csv"))
 
 for file in files:
-
     print(f"Loading {file}")
 
     df = pd.read_csv(file)
     
     df["price"] = (
-    pd.to_numeric(df["price"], errors="coerce")
-    .fillna(0)
-    .astype(int)
-)
+        pd.to_numeric(df["price"], errors="coerce")
+        .fillna(0)
+        .astype(int)
+    )
 
     for col in [
         "rating",
@@ -60,25 +60,23 @@ for file in files:
 
     df["parsed_at"] = pd.to_datetime(df["parsed_at"])
 
-    records = []
     print("\nNULL statistics:")
-
     for col in df.columns:
         cnt = df[col].isna().sum()
-
         if cnt > 0:
             print(f"{col}: {cnt}")
 
     df = df.dropna(
-    subset=[
-        "title",
-        "category",
-        "subcategory",
-        "url"
-    ])
+        subset=[
+            "title",
+            "category",
+            "subcategory",
+            "url"
+        ]
+    )
     
+    records = []
     for _, row in df.iterrows():
-
         records.append((
             row["title"],
             row["category"],
@@ -103,15 +101,25 @@ for file in files:
             row["parsed_at"].to_pydatetime()
         ))
 
-    for i, rec in enumerate(records):
+    total_records = len(records)
+    inserted = 0
+    
+    for i in range(0, total_records, BATCH_SIZE):
+        batch = records[i:i + BATCH_SIZE]
+        
         try:
             client.execute(
                 f"INSERT INTO {DB}.products VALUES",
-                [rec]
+                batch
             )
+            inserted += len(batch)
+            print(f"Inserted batch {i//BATCH_SIZE + 1}: {len(batch)} rows (total: {inserted}/{total_records})")
+            
         except Exception as e:
-            print(f"\nBROKEN RECORD #{i}")
-            print(rec)
+            print(f"\nERROR in batch #{i//BATCH_SIZE + 1}")
+            print(f"Batch size: {len(batch)}")
+            print(f"First record in batch: {batch[0] if batch else 'empty'}")
+            print(f"Error: {e}")
             raise
 
-    print(f"Inserted {len(records)} rows")
+    print(f"\n✅ File {file.name} complete. Inserted {inserted} rows\n")

@@ -49,6 +49,11 @@ services:
       CLICKHOUSE_DB: ${CLICKHOUSE_DB}
       CLICKHOUSE_USER: ${CLICKHOUSE_USER}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
     volumes:
       - clickhouse_data:/var/lib/clickhouse
     restart: unless-stopped
