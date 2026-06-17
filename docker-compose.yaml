@@ -52,11 +52,6 @@ services:
     volumes:
       - clickhouse_data:/var/lib/clickhouse
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 1G
-          cpus: '0.7'
     networks:
       - airflow_network
 
