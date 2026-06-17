@@ -400,7 +400,7 @@ def save_batch_to_clickhouse(batch, client, db):
                 record['title'] if record['title'] is not None else '',
                 record['category'] if record['category'] is not None else '',
                 record['subcategory'] if record['subcategory'] is not None else '',
-                int(record['price']) if record['price'] is not None else 0,
+                int(record['price']) if record['price'] is not None else None,
                 record['price_unit'] if record['price_unit'] is not None else 'шт',
                 record['weight'],
                 safe_float(record['rating']),
@@ -416,7 +416,7 @@ def save_batch_to_clickhouse(batch, client, db):
                 record['country'],
                 record['composition'],
                 record['labels'],
-                record['url'] if record['url'] is not None else '',  # <--- вот тут!
+                record['url'],
                 record['parsed_at']
             )
             values.append(row)
@@ -450,8 +450,8 @@ def create_table():
             title String,
             category String,
             subcategory String,
-            price UInt32,
-            price_unit LowCardinality(String),
+            price Nullable(UInt32),
+            price_unit Nullable(String),
             weight Nullable(String),
             rating Nullable(Float32),
             description Nullable(String),
@@ -460,13 +460,13 @@ def create_table():
             fats Nullable(Float32),
             carbs Nullable(Float32),
             shelf_life Nullable(String),
-            brand LowCardinality(String),
+            brand Nullable(String),
             storage_conditions Nullable(String),
             manufacturer Nullable(String),
             country Nullable(String),
             composition Nullable(String),
             labels Nullable(String),
-            url String,
+            url Nullable(String),
             parsed_at DateTime
         ) ENGINE = MergeTree()
         ORDER BY (parsed_at, category, subcategory, title)
