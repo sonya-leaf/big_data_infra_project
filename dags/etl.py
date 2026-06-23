@@ -317,31 +317,49 @@ def extract_product_info(url, session):
             shelf_life = brand = storage_conditions = manufacturer = country = composition = weight = None
 
             info_items = soup.find_all('div', class_='VV23_DetailProdPageInfoDescItem')
+
             for item in info_items:
-                title_tag = item.find('h4', class_='VV23_DetailProdPageInfoDescItem__Title')
+        
+                title_tag = item.find(
+                    class_=lambda c: c and
+                    'VV23_DetailProdPageInfoDescItem__Title' in c
+                )
+        
                 if not title_tag:
                     continue
-
-                title_text = title_tag.get_text(strip=True)
-                desc_tag = item.find('div', class_='VV23_DetailProdPageInfoDescItem__Desc')
-
-                if desc_tag:
-                    desc_text = desc_tag.get_text(strip=True)
-
-                    if 'Годен' in title_text:
-                        shelf_life = desc_text
-                    elif 'Бренд' in title_text:
-                        brand = desc_text
-                    elif 'Условия хранения' in title_text:
-                        storage_conditions = desc_text
-                    elif 'Изготовитель' in title_text:
-                        manufacturer = desc_text
-                    elif 'Страна производства' in title_text:
-                        country = desc_text
-                    elif 'Состав' in title_text:
-                        composition = desc_text
-                    elif 'Вес' in title_text or 'Объем' in title_text:
-                        weight = desc_text
+        
+                title_text = title_tag.get_text(" ", strip=True)
+        
+                desc_tag = item.find(
+                    class_=lambda c: c and
+                    'VV23_DetailProdPageInfoDescItem__Desc' in c
+                )
+        
+                if not desc_tag:
+                    continue
+        
+                desc_text = desc_tag.get_text(" ", strip=True)
+        
+                if 'Годен' in title_text:
+                    shelf_life = desc_text
+        
+                elif 'Бренд' in title_text:
+                    brand = desc_text
+        
+                elif 'Условия хранения' in title_text:
+                    storage_conditions = desc_text
+        
+                elif 'Изготовитель' in title_text:
+                    manufacturer = desc_text
+        
+                elif 'Страна производства' in title_text:
+                    country = desc_text
+        
+                elif 'Состав' in title_text:
+                    composition = desc_text
+        
+                elif 'Вес' in title_text or 'Объем' in title_text:
+                    weight = desc_text
 
             labels = []
             label_tags = soup.find_all('div', class_='ProductCardLabel')
